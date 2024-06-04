@@ -45,7 +45,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        include_tasks:
           - distro: geerlingguy/docker-debian11-ansible:latest
             scenario: default
             prebuilt: 'true'
