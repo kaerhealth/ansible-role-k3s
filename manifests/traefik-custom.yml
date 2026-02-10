@@ -9,15 +9,12 @@ spec:
       access:
         enabled: true
         format: json
-    #    fields:
-    #     headers:
-    #       defaultmode: keep
     tracing: {}
 
     service:
-    #  type: NodePort
       spec:
         externalTrafficPolicy: Local
+        healthCheckNodePort: 32323
 
     deployment:
       kind: DaemonSet
