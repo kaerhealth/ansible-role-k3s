@@ -17,24 +17,56 @@
     k3s_binary_url: "https://storage.googleapis.com/k3s-ci-builds/k3s{{ k3s_arch_suffix }}-{{ k3s_release_version }}"
     k3s_hash_url: "https://storage.googleapis.com/k3s-ci-builds/k3s{{ k3s_arch_suffix }}-{{ k3s_release_version }}.sha256sum"
   when:
-    - k3s_release_version | regex_search("^[a-z0-9]{40}$")
+    - (k3s_release_version | default('') | regex_search('^[a-z0-9]{40}$')) is not none
   check_mode: false
 
-- name: Ensure the k3s hashsum is downloaded
+- name: Ensure the k3s hashsum is downloaded (once on localhost)
   ansible.builtin.uri:
     url: "{{ k3s_hash_url }}"
     return_content: true
+    status_code: 200
   register: k3s_hash_sum_raw
+  retries: 10
+  delay: 3
+  until: k3s_hash_sum_raw.status == 200
   check_mode: false
+  delegate_to: localhost
+  run_once: true
 
-- name: Ensure sha256sum is set from hashsum variable
+- name: Debug hashsum response (once)
+  ansible.builtin.debug:
+    msg:
+      - "hash_url={{ k3s_hash_url }}"
+      - "status={{ k3s_hash_sum_raw.status | default('n/a') }}"
+      - "content_type={{ k3s_hash_sum_raw.content_type | default('n/a') }}"
+      - "head={{ (k3s_hash_sum_raw.content | default('') ).splitlines()[:15] }}"
+  run_once: true
+  delegate_to: localhost
+
+- name: Compute sha256sum for k3s binary (once, robust)
+  vars:
+    _h: "{{ ansible_play_hosts[0] }}"
+    _suffix: "{{ hostvars[_h].k3s_arch_suffix | default('') }}"
+    _bin_name: "k3s{{ _suffix }}"
+    _lines: "{{ k3s_hash_sum_raw.content.splitlines() }}"
+    _match: "{{ _lines | select('match', '^[0-9a-f]{64}\\s+%s$' % _bin_name) | list }}"
   ansible.builtin.set_fact:
-    k3s_hash_sum: "{{ (k3s_hash_sum_raw.content.split('\n') |
-      select('search', 'k3s' + k3s_arch_suffix) |
-      reject('search', 'images') |
-      first).split() | first }}"
-  changed_when: false
-  check_mode: false
+    _k3s_hash_sum_once: "{{ _match[0].split()[0] if (_match|length>0) else '' }}"
+  run_once: true
+  delegate_to: localhost
+  delegate_facts: true
+
+- name: Fail if sha256 line not found (once)
+  ansible.builtin.fail:
+    msg: "sha256 line not found in {{ k3s_hash_url }}"
+  when: hostvars['localhost']._k3s_hash_sum_once | default('') | length == 0
+  run_once: true
+  delegate_to: localhost
+
+- name: Broadcast sha256sum fact to all nodes
+  ansible.builtin.set_fact:
+    k3s_hash_sum: "{{ hostvars['localhost']._k3s_hash_sum_once }}"
+  delegate_facts: true
 
 - name: Ensure installation directory exists
   ansible.builtin.file:
