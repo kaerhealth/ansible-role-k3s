@@ -109,7 +109,7 @@
       {% filter replace('\n', ' ') %}
       {{ host }}
       @@@
-      {{ hostvars[host].ansible_host | default(hostvars[host].ansible_fqdn) | string }}
+      {{ hostvars[host].ansible_host | default(hostvars[host].ansible_facts.fqdn) | string }}
       @@@
       C_{{ hostvars[host].k3s_control_node | string }}
       @@@
